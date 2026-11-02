@@ -11,9 +11,17 @@ Designed to execute on Google Colab with T4 GPU:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+# Disable TensorFlow and Flax backend detection in Transformers (pure PyTorch execution)
+os.environ["USE_TF"] = "0"
+os.environ["USE_TORCH"] = "1"
+os.environ["USE_FLAX"] = "0"
+os.environ["TRANSFORMERS_NO_TF"] = "1"
+os.environ["TRANSFORMERS_NO_FLAX"] = "1"
 
 # Add 'src' to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
