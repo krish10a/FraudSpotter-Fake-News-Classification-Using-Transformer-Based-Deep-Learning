@@ -96,6 +96,7 @@ def compute_metrics_fn(eval_pred: Any) -> Dict[str, float]:
 
     return {
         "accuracy": acc,
+        "f1_macro": macro_f1,
         "eval_f1_macro": macro_f1,
         "fake_f1": fake_f1,
         "real_f1": real_f1,
@@ -244,12 +245,12 @@ def main():
             max_length=seq_len,
         )
 
-    train_ds = Dataset.from_pandas(train_df[["title", "body", "label"]]).map(
-        tokenize_paired, batched=True
-    )
-    val_ds = Dataset.from_pandas(val_df[["title", "body", "label"]]).map(
-        tokenize_paired, batched=True
-    )
+    train_ds = Dataset.from_pandas(
+        train_df[["title", "body", "label"]], preserve_index=False
+    ).map(tokenize_paired, batched=True)
+    val_ds = Dataset.from_pandas(
+        val_df[["title", "body", "label"]], preserve_index=False
+    ).map(tokenize_paired, batched=True)
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer, pad_to_multiple_of=8)
 
@@ -260,26 +261,36 @@ def main():
         label2id={"REAL": 0, "FAKE": 1},
     )
 
-    training_args = TrainingArguments(
-        output_dir=str(out_dir),
-        num_train_epochs=epochs,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=eval_batch_size,
-        gradient_accumulation_steps=grad_accum,
-        learning_rate=lr,
-        weight_decay=float(t_cfg.get("weight_decay", 0.01)),
-        warmup_ratio=float(t_cfg.get("warmup_ratio", 0.1)),
-        evaluation_strategy=t_cfg.get("evaluation_strategy", "epoch"),
-        save_strategy=t_cfg.get("save_strategy", "epoch"),
-        save_total_limit=2,
-        load_best_model_at_end=t_cfg.get("load_best_model_at_end", True),
-        metric_for_best_model=t_cfg.get("metric_for_best_model", "eval_f1_macro"),
-        greater_is_better=True,
-        fp16=(device == "cuda" and t_cfg.get("fp16", True)),
-        logging_steps=t_cfg.get("logging_steps", 100),
-        report_to="none",
-        seed=seed,
-    )
+    # Safe eval_strategy handling across transformers versions
+    eval_strat = t_cfg.get("evaluation_strategy", t_cfg.get("eval_strategy", "epoch"))
+    training_args_kwargs = {
+        "output_dir": str(out_dir),
+        "num_train_epochs": epochs,
+        "per_device_train_batch_size": batch_size,
+        "per_device_eval_batch_size": eval_batch_size,
+        "gradient_accumulation_steps": grad_accum,
+        "learning_rate": lr,
+        "weight_decay": float(t_cfg.get("weight_decay", 0.01)),
+        "warmup_ratio": float(t_cfg.get("warmup_ratio", 0.1)),
+        "save_strategy": t_cfg.get("save_strategy", "epoch"),
+        "save_total_limit": 2,
+        "load_best_model_at_end": t_cfg.get("load_best_model_at_end", True),
+        "metric_for_best_model": t_cfg.get("metric_for_best_model", "eval_f1_macro"),
+        "greater_is_better": True,
+        "fp16": (device == "cuda" and t_cfg.get("fp16", True)),
+        "logging_steps": t_cfg.get("logging_steps", 100),
+        "report_to": "none",
+        "seed": seed,
+    }
+    import inspect
+
+    sig = inspect.signature(TrainingArguments.__init__)
+    if "eval_strategy" in sig.parameters:
+        training_args_kwargs["eval_strategy"] = eval_strat
+    else:
+        training_args_kwargs["evaluation_strategy"] = eval_strat
+
+    training_args = TrainingArguments(**training_args_kwargs)
 
     trainer = Trainer(
         model=model,
