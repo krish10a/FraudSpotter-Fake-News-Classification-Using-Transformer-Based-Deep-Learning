@@ -6,9 +6,13 @@ Supports '--sample' flag for local fixture generation.
 """
 
 import argparse
+import sys
 import urllib.request
 import zipfile
 from pathlib import Path
+
+# Ensure 'src' is on sys.path for direct script execution
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 
 def download_file(url: str, dest_path: Path) -> None:

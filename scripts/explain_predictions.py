@@ -69,6 +69,7 @@ def main():
     # 2. Local LIME Explanation
     logger.info("Generating LIME local attribution...")
     lime_cfg = config.get("lime", {})
+
     def predict_fn(texts):
         return pipeline.predict_proba(texts)
 

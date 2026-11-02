@@ -5,7 +5,11 @@ and generates stratified Train, Validation, and Test splits.
 """
 
 import argparse
+import sys
 from pathlib import Path
+
+# Ensure 'src' is on sys.path for direct script execution
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import pandas as pd
 

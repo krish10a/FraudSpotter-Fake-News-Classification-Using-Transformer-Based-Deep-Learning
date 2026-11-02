@@ -15,12 +15,17 @@ def test_classification_metrics():
 
     metrics = compute_classification_metrics(y_true, y_pred, y_prob)
     assert "accuracy" in metrics
+    assert "balanced_accuracy" in metrics
     assert "macro_f1" in metrics
-    assert "precision" in metrics
-    assert "recall" in metrics
+    assert "weighted_f1" in metrics
+    assert "fake_f1" in metrics
+    assert "real_f1" in metrics
+    assert "confusion_matrix" in metrics
     assert "roc_auc" in metrics
     assert "pr_auc" in metrics
     assert "mcc" in metrics
+    assert "brier_score" in metrics
+    assert "expected_calibration_error" in metrics
     assert 0.0 <= metrics["accuracy"] <= 1.0
 
 

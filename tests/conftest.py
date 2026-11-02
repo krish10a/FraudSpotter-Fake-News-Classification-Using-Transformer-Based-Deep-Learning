@@ -13,7 +13,10 @@ def sample_news_data():
     fixture_path = Path(__file__).parent / "fixtures" / "sample_news.json"
     with open(fixture_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    if "content" not in df.columns:
+        df["content"] = (df["title"].fillna("") + " " + df["text"].fillna("")).str.strip()
+    return df
 
 
 @pytest.fixture

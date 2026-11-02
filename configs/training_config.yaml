@@ -2,8 +2,17 @@
 seed: 42
 device: "cuda"  # fallback to 'cpu' when cuda is unavailable
 
+# Label Convention (Frozen canonical: REAL=0, FAKE=1)
+labels:
+  id2label:
+    0: "REAL"
+    1: "FAKE"
+  label2id:
+    "REAL": 0
+    "FAKE": 1
+
 transformer:
-  model_name: "distilbert-base-uncased"
+  model_name: "distilbert/distilbert-base-uncased"
   num_labels: 2
   max_seq_length: 512
   batch_size: 16
@@ -24,39 +33,60 @@ transformer:
   output_dir: "artifacts/models/distilbert"
 
 classical:
-  tfidf:
-    max_features: 10000
+  # Memory efficiency & precision
+  dtype: "float32"
+
+  # Word TF-IDF representation (MultinomialNB & Logistic Regression)
+  word_tfidf:
     ngram_range: [1, 2]
-    min_df: 3
+    min_df: 2
     max_df: 0.95
     sublinear_tf: true
-  
+    max_features: 150000
+
+  # Character TF-IDF representation (Logistic Regression)
+  char_tfidf:
+    analyzer: "char_wb"
+    ngram_range: [3, 5]
+    min_df: 2
+    max_df: 0.95
+    sublinear_tf: true
+    max_features: 150000
+
+  # Majority Sanity Baseline
+  majority:
+    output_path: "artifacts/models/classical/majority_baseline.joblib"
+
+  # Multinomial Naive Bayes (Word TF-IDF only)
+  multinomial_nb:
+    fit_prior: true
+    alpha_candidates: [0.01, 0.05, 0.1, 0.5, 1.0, 2.0]
+    output_path: "artifacts/models/classical/multinomial_nb.joblib"
+    vectorizer_path: "artifacts/models/classical/multinomial_nb_vectorizer.joblib"
+
+  # Logistic Regression (Combined Word + Char TF-IDF)
   logistic_regression:
-    C: 1.0
     penalty: "l2"
     solver: "lbfgs"
-    max_iter: 1000
+    max_iter: 2000
     class_weight: "balanced"
-    output_path: "artifacts/models/classical/logreg.joblib"
+    C_candidates: [1.0, 2.0, 4.0]
+    output_path: "artifacts/models/classical/logistic_regression.joblib"
+    features_path: "artifacts/models/classical/logistic_regression_features.joblib"
 
-  multinomial_nb:
-    alpha: 0.1
-    fit_prior: true
-    output_path: "artifacts/models/classical/naive_bayes.joblib"
-
+  # Linear SVM (Optional Baseline)
   linear_svm:
-    C: 1.0
     loss: "squared_hinge"
     max_iter: 2000
     class_weight: "balanced"
+    C_candidates: [0.5, 1.0, 2.0]
     output_path: "artifacts/models/classical/linear_svm.joblib"
 
 optuna:
-  n_trials: 20
+  n_trials: 10
   timeout_seconds: 7200
   search_space:
     learning_rate: [1.0e-5, 5.0e-5]
     batch_size: [16, 32]
     weight_decay: [0.001, 0.1]
     warmup_ratio: [0.05, 0.2]
-
