@@ -18,9 +18,9 @@ def get_transformer_model(
     from transformers import AutoModelForSequenceClassification
 
     if id2label is None:
-        id2label = {0: "FAKE", 1: "REAL"}
+        id2label = {0: "REAL", 1: "FAKE"}
     if label2id is None:
-        label2id = {"FAKE": 0, "REAL": 1}
+        label2id = {"REAL": 0, "FAKE": 1}
 
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name,
