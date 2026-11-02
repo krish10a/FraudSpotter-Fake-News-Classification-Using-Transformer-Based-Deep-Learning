@@ -1,3 +1,6 @@
+import hashlib
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -200,14 +203,19 @@ def tune_linear_svm(
     X_val: sparse.csr_matrix,
     y_val: np.ndarray,
     C_candidates: List[float],
+    use_calibration: bool = False,
+    cv: int = 3,
     max_iter: int = 2000,
     class_weight: str = "balanced",
     random_state: int = 42,
 ) -> Tuple[Any, float, List[Dict[str, Any]]]:
-    """Tune LinearSVC with calibrated probabilities using validation Macro-F1 only.
+    """Tune LinearSVC with optional calibrated probabilities using validation Macro-F1 only.
+
+    When use_calibration is False (recommended for memory-constrained CPU baseline),
+    LinearSVC is fitted directly without multi-fold cross-validation overhead.
 
     Returns:
-        Tuple of (best_calibrated_model, best_C, tuning_history)
+        Tuple of (best_model, best_C, tuning_history)
     """
     best_model: Optional[Any] = None
     best_f1: float = -1.0
@@ -222,9 +230,13 @@ def tune_linear_svm(
             class_weight=class_weight,
             random_state=random_state,
         )
-        calibrated_clf = CalibratedClassifierCV(estimator=base_svm, cv=3)
-        calibrated_clf.fit(X_train, y_train)
-        val_preds = calibrated_clf.predict(X_val)
+        if use_calibration:
+            clf: Any = CalibratedClassifierCV(estimator=base_svm, cv=cv)
+        else:
+            clf = base_svm
+
+        clf.fit(X_train, y_train)
+        val_preds = clf.predict(X_val)
         val_f1 = float(f1_score(y_val, val_preds, average="macro"))
 
         record = {"C": float(C), "val_macro_f1": val_f1}
@@ -232,7 +244,7 @@ def tune_linear_svm(
 
         if val_f1 > best_f1:
             best_f1 = val_f1
-            best_model = calibrated_clf
+            best_model = clf
             best_C = float(C)
 
     assert best_model is not None
@@ -241,11 +253,19 @@ def tune_linear_svm(
 
 
 def build_classical_pipeline(
-    model_type: str = "logistic_regression",
+    model_type: str = "logistic_word_char",
     tfidf_params: Optional[Dict[str, Any]] = None,
     model_params: Optional[Dict[str, Any]] = None,
 ) -> Pipeline:
-    """Build an end-to-end inference Pipeline combining feature extraction and classifier."""
+    """Build an end-to-end inference Pipeline combining feature extraction and classifier.
+
+    Supported model_type values:
+      - 'majority': MajorityClassifier sanity baseline
+      - 'multinomial_nb' / 'naive_bayes': Word TF-IDF + MultinomialNB
+      - 'logistic_word' / 'logistic_regression_word': Word-only TF-IDF + LogisticRegression
+      - 'logistic_word_char' / 'logistic_regression': Combined Word+Char TF-IDF + LogisticRegression
+      - 'linear_svm' / 'svm': Combined Word+Char TF-IDF + LinearSVC
+    """
     m_type = model_type.lower()
 
     if m_type in ["majority", "majority_baseline"]:
@@ -262,7 +282,21 @@ def build_classical_pipeline(
         clf = MultinomialNB(**clf_params)
         return Pipeline([("features", vectorizer), ("clf", clf)])
 
-    elif m_type in ["logistic_regression", "logreg"]:
+    elif m_type in ["logistic_word", "logistic_regression_word"]:
+        vectorizer = build_word_vectorizer(**(tfidf_params or {}))
+        clf_params = {
+            "C": 1.0,
+            "solver": "lbfgs",
+            "max_iter": 2000,
+            "class_weight": "balanced",
+            "random_state": 42,
+        }
+        if model_params:
+            clf_params.update(model_params)
+        clf = LogisticRegression(**clf_params)
+        return Pipeline([("features", vectorizer), ("clf", clf)])
+
+    elif m_type in ["logistic_word_char", "logistic_regression", "logreg"]:
         vectorizer = build_combined_feature_union()
         clf_params = {
             "C": 1.0,
@@ -286,7 +320,7 @@ def build_classical_pipeline(
         }
         if model_params:
             params.update(model_params)
-        use_calibration = params.pop("use_calibration", True)
+        use_calibration = params.pop("use_calibration", False)
         calib_cv = params.pop("cv", 3)
         base_svm = LinearSVC(**params)
         if use_calibration:
@@ -302,7 +336,7 @@ def build_classical_pipeline(
 def predict_pipeline(
     pipeline: Pipeline, texts: Union[List[str], np.ndarray]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Predict class labels and calibrated probabilities (shape: [N, 2])."""
+    """Predict class labels and probabilities (or decision margins for uncalibrated models)."""
     preds = pipeline.predict(texts)
 
     if hasattr(pipeline, "predict_proba"):
@@ -311,13 +345,14 @@ def predict_pipeline(
         feat_step = pipeline.steps[0][0]
         feats = pipeline.named_steps[feat_step].transform(texts)
         probs = pipeline.named_steps["clf"].predict_proba(feats)
-    else:
-        # Fallback using decision function sigmoid calibration
+    elif hasattr(pipeline.named_steps["clf"], "decision_function"):
         feat_step = pipeline.steps[0][0]
         feats = pipeline.named_steps[feat_step].transform(texts)
         dec = pipeline.named_steps["clf"].decision_function(feats)
         p1 = 1 / (1 + np.exp(-dec))
         probs = np.column_stack([1 - p1, p1])
+    else:
+        probs = np.zeros((len(preds), 2), dtype=np.float32)
 
     return preds, probs
 
@@ -329,9 +364,51 @@ def save_model(pipeline: Any, filepath: str) -> None:
     joblib.dump(pipeline, path)
 
 
+def save_model_bundle(
+    output_dir: Union[str, Path],
+    model_name: str,
+    pipeline: Any,
+    vectorizer: Optional[Any] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Path:
+    """Save model pipeline, separate vectorizer, and model_metadata.json into a dedicated model folder."""
+    model_dir = Path(output_dir) / model_name
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    pipeline_path = model_dir / "pipeline.joblib"
+    joblib.dump(pipeline, pipeline_path)
+
+    if vectorizer is not None:
+        vec_path = model_dir / "vectorizer.joblib"
+        joblib.dump(vectorizer, vec_path)
+
+    # Compute artifact SHA256
+    with open(pipeline_path, "rb") as f:
+        file_sha256 = hashlib.sha256(f.read()).hexdigest()
+
+    meta = {
+        "model_name": model_name,
+        "artifact_file": "pipeline.joblib",
+        "sha256": file_sha256,
+        "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+        **(metadata or {}),
+    }
+
+    meta_path = model_dir / "model_metadata.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    return model_dir
+
+
 def load_model(filepath: str) -> Any:
     """Load serialized model artifact from disk."""
     path = Path(filepath)
+    if path.is_dir():
+        # Look for pipeline.joblib inside directory
+        cand = path / "pipeline.joblib"
+        if cand.is_file():
+            return joblib.load(cand)
     if not path.is_file():
         raise FileNotFoundError(f"Model artifact not found at: {filepath}")
     return joblib.load(path)

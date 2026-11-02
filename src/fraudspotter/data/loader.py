@@ -51,6 +51,9 @@ def load_split_data(
 ) -> Tuple[pd.DataFrame, pd.Series]:
     """Load a frozen processed train, validation, or test split from Parquet or CSV.
 
+    Optimized for memory efficiency: selectively loads only relevant text and label columns
+    when reading Parquet files.
+
     Ensures the presence of 'content' and integer binary labels conforming to:
     REAL = 0, FAKE = 1.
     """
@@ -59,8 +62,24 @@ def load_split_data(
         raise FileNotFoundError(f"Split file not found: {file_path}")
 
     suffix = path.suffix.lower()
+    df: Optional[pd.DataFrame] = None
+
     if suffix in [".parquet", ".pq"]:
-        df = pd.read_parquet(path)
+        # Memory optimization: attempt selective column projection if combined_text is available
+        try:
+            import pyarrow.parquet as pq
+
+            schema_cols = pq.read_schema(path).names
+            target_text = text_col or ("combined_text" if "combined_text" in schema_cols else ("content" if "content" in schema_cols else None))
+            target_label = label_col if label_col in schema_cols else ("label" if "label" in schema_cols else None)
+
+            if target_text and target_label:
+                df = pd.read_parquet(path, columns=[target_text, target_label])
+        except Exception:
+            df = None
+
+        if df is None:
+            df = pd.read_parquet(path)
     elif suffix in [".csv", ".txt"]:
         df = pd.read_csv(path)
     else:
@@ -73,6 +92,8 @@ def load_split_data(
     # Resolve text content column
     if text_col and text_col in df.columns:
         content_series = df[text_col].fillna("").astype(str)
+    elif "combined_text" in df.columns:
+        content_series = df["combined_text"].fillna("").astype(str)
     elif "content" in df.columns:
         content_series = df["content"].fillna("").astype(str)
     elif "title" in df.columns and "text" in df.columns:

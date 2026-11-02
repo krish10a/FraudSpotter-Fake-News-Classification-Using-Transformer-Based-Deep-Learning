@@ -26,12 +26,14 @@ Work one phase at a time. Do not implement the dashboard before the model and in
 
 **Exit:** no exact/group overlap; split counts and class ratios recorded.
 
-## Phase 3 — Classical baselines (Colab)
+## Phase 3 — Classical baselines (Local CPU / Colab)
 - Majority sanity baseline.
-- MultinomialNB.
+- MultinomialNB (Word TF-IDF).
+- Word-only TF-IDF Logistic Regression.
 - Word + character TF-IDF Logistic Regression.
-- Optional calibrated LinearSVC.
-- Validation tuning only; save full pipelines and probabilities.
+- Optional LinearSVC.
+- Memory-efficient sequential execution architecture with aggressive garbage collection.
+- Validation tuning only; save isolated pipelines, vectorizers, and metadata.
 
 **Exit:** baseline artifacts and validation metrics saved.
 

@@ -32,6 +32,8 @@ artifacts/metrics/*
 !artifacts/metrics/.gitkeep
 artifacts/figures/*
 !artifacts/figures/.gitkeep
+reports/evaluations/*
+!reports/evaluations/.gitkeep
 *.pt
 *.pth
 *.bin

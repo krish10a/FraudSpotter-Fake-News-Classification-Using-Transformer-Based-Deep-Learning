@@ -15,6 +15,7 @@ from fraudspotter.models.classical import (
     load_model,
     predict_pipeline,
     save_model,
+    save_model_bundle,
     tune_linear_svm,
     tune_logistic_regression,
     tune_multinomial_nb,
@@ -100,13 +101,19 @@ def test_build_and_train_classical_pipelines(sample_news_data, tmp_path):
     texts = df["content"].tolist()
     labels = df["label"].values
 
-    models = ["majority", "multinomial_nb", "logistic_regression", "linear_svm"]
+    models = [
+        "majority",
+        "multinomial_nb",
+        "logistic_word",
+        "logistic_word_char",
+        "linear_svm",
+    ]
     for model_type in models:
         model_params = None
-        if model_type == "logistic_regression":
+        if "logistic" in model_type:
             model_params = {"max_iter": 100}
         elif model_type in ["linear_svm", "svm"]:
-            model_params = {"cv": 2, "max_iter": 100}
+            model_params = {"max_iter": 100, "use_calibration": False}
 
         pipeline = build_classical_pipeline(
             model_type=model_type,
@@ -259,14 +266,85 @@ def test_text_truncation_logic():
 
 def test_intermediate_report_persistence(tmp_path):
     """Verify intermediate reporting persists valid JSON after each stage."""
-    from scripts.train_classical import save_intermediate_report
+    from scripts.train_classical import save_json
 
     test_file = tmp_path / "test_metrics.json"
     data = {"stage": "majority", "macro_f1": 0.5}
 
-    save_intermediate_report(data, test_file)
+    save_json(data, test_file)
     assert test_file.exists()
 
     with open(test_file, "r", encoding="utf-8") as f:
         loaded = json.load(f)
     assert loaded["stage"] == "majority"
+
+
+def test_save_model_bundle_and_directory_load(sample_news_data, tmp_path):
+    """Verify save_model_bundle generates pipeline, vectorizer, and metadata, and load_model can reload from folder."""
+    texts = sample_news_data["content"].tolist()
+    labels = sample_news_data["label"].values
+
+    pipe = build_classical_pipeline("naive_bayes")
+    pipe.fit(texts, labels)
+
+    vec = pipe.named_steps["features"]
+    bundle_dir = save_model_bundle(
+        output_dir=tmp_path,
+        model_name="nb_test",
+        pipeline=pipe,
+        vectorizer=vec,
+        metadata={"alpha": 0.1, "dataset": "test_fixture"},
+    )
+
+    assert (bundle_dir / "pipeline.joblib").exists()
+    assert (bundle_dir / "vectorizer.joblib").exists()
+    assert (bundle_dir / "model_metadata.json").exists()
+
+    with open(bundle_dir / "model_metadata.json", "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    assert meta["model_name"] == "nb_test"
+    assert "sha256" in meta
+
+    # Test loading directly via folder path
+    reloaded_pipe = load_model(str(bundle_dir))
+    preds, probs = predict_pipeline(reloaded_pipe, texts[:2])
+    assert len(preds) == 2
+    assert probs.shape == (2, 2)
+
+
+def test_uncalibrated_svm_metrics():
+    """Verify compute_uncalibrated_svm_metrics computes metrics on margin scores with null calibration."""
+    from scripts.train_classical import compute_uncalibrated_svm_metrics
+
+    y_true = np.array([0, 1, 0, 1, 1, 0], dtype=int)
+    # Decision margins: positive -> class 1, negative -> class 0
+    decision_scores = np.array([-1.5, 2.1, -0.4, 0.9, 1.2, -0.8])
+
+    metrics = compute_uncalibrated_svm_metrics(y_true, decision_scores)
+    assert metrics["accuracy"] == 1.0
+    assert metrics["macro_f1"] == 1.0
+    assert metrics["brier_score"] is None
+    assert metrics["expected_calibration_error"] is None
+    assert metrics["roc_auc"] == 1.0
+
+
+def test_parquet_selective_column_loading(tmp_path):
+    """Verify load_split_data correctly loads Parquet with combined_text and label."""
+    df_raw = pd.DataFrame(
+        {
+            "record_id": ["rec_1", "rec_2"],
+            "title": ["Title 1", "Title 2"],
+            "text": ["Text 1", "Text 2"],
+            "combined_text": ["Title 1 Text 1 combined", "Title 2 Text 2 combined"],
+            "label": [0, 1],
+            "split": ["train", "train"],
+        }
+    )
+    pq_file = tmp_path / "selective.parquet"
+    df_raw.to_parquet(pq_file, index=False)
+
+    loaded_df, loaded_y = load_split_data(str(pq_file))
+    assert len(loaded_df) == 2
+    assert "content" in loaded_df.columns
+    assert loaded_df["content"].iloc[0] == "Title 1 Text 1 combined"
+    assert list(loaded_y.values) == [0, 1]

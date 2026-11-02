@@ -70,7 +70,25 @@ classical:
     output_path: "artifacts/models/classical/multinomial_nb.joblib"
     vectorizer_path: "artifacts/models/classical/multinomial_nb_vectorizer.joblib"
 
-  # Logistic Regression (Combined Word + Char TF-IDF)
+  # Logistic Regression - Word-only TF-IDF (Model C)
+  logistic_word:
+    penalty: "l2"
+    solver: "lbfgs"
+    solver_candidates: ["lbfgs", "liblinear"]
+    max_iter: 2000
+    class_weight: "balanced"
+    C_candidates: [1.0, 2.0, 4.0]
+
+  # Logistic Regression - Combined Word + Char TF-IDF (Model D)
+  logistic_word_char:
+    penalty: "l2"
+    solver: "lbfgs"
+    solver_candidates: ["lbfgs", "liblinear"]
+    max_iter: 2000
+    class_weight: "balanced"
+    C_candidates: [1.0, 2.0, 4.0]
+
+  # Legacy alias for backward compatibility
   logistic_regression:
     penalty: "l2"
     solver: "lbfgs"
@@ -78,16 +96,14 @@ classical:
     max_iter: 2000
     class_weight: "balanced"
     C_candidates: [1.0, 2.0, 4.0]
-    output_path: "artifacts/models/classical/logistic_regression.joblib"
-    features_path: "artifacts/models/classical/logistic_regression_features.joblib"
 
-  # Linear SVM (Optional Baseline)
+  # Linear SVM (Model E)
   linear_svm:
     loss: "squared_hinge"
     max_iter: 2000
     class_weight: "balanced"
     C_candidates: [0.5, 1.0, 2.0]
-    output_path: "artifacts/models/classical/linear_svm.joblib"
+    use_calibration: false
 
 optuna:
   n_trials: 10
