@@ -42,7 +42,7 @@ def build_word_vectorizer(
     ngram_range: Tuple[int, int] = (1, 2),
     min_df: int = 2,
     max_df: float = 0.95,
-    max_features: int = 150000,
+    max_features: int = 100000,
     sublinear_tf: bool = True,
     dtype: np.dtype = np.float32,
 ) -> TfidfVectorizer:
@@ -60,9 +60,9 @@ def build_word_vectorizer(
 
 def build_char_vectorizer(
     ngram_range: Tuple[int, int] = (3, 5),
-    min_df: int = 2,
+    min_df: int = 3,
     max_df: float = 0.95,
-    max_features: int = 150000,
+    max_features: int = 50000,
     sublinear_tf: bool = True,
     dtype: np.dtype = np.float32,
 ) -> TfidfVectorizer:
@@ -87,15 +87,15 @@ def build_combined_feature_union(
         "ngram_range": (1, 2),
         "min_df": 2,
         "max_df": 0.95,
-        "max_features": 150000,
+        "max_features": 100000,
         "sublinear_tf": True,
         "dtype": np.float32,
     }
     c_params = char_params or {
         "ngram_range": (3, 5),
-        "min_df": 2,
+        "min_df": 3,
         "max_df": 0.95,
-        "max_features": 150000,
+        "max_features": 50000,
         "sublinear_tf": True,
         "dtype": np.float32,
     }
@@ -148,36 +148,50 @@ def tune_logistic_regression(
     y_val: np.ndarray,
     C_candidates: List[float],
     solver: str = "lbfgs",
+    solver_candidates: Optional[List[str]] = None,
     max_iter: int = 2000,
     class_weight: str = "balanced",
     random_state: int = 42,
-) -> Tuple[LogisticRegression, List[Dict[str, Any]]]:
-    """Tune Logistic Regression C parameter using validation Macro-F1 only."""
+) -> Tuple[LogisticRegression, float, str, List[Dict[str, Any]]]:
+    """Tune Logistic Regression across C and solver candidates using validation Macro-F1 only.
+
+    Returns:
+        Tuple of (best_model, best_C, best_solver, history)
+    """
     best_model: Optional[LogisticRegression] = None
     best_f1: float = -1.0
+    best_C: float = float(C_candidates[0])
+    best_solver: str = solver
     history: List[Dict[str, Any]] = []
 
-    for C in C_candidates:
-        clf = LogisticRegression(
-            C=C,
-            solver=solver,
-            max_iter=max_iter,
-            class_weight=class_weight,
-            random_state=random_state,
-        )
-        clf.fit(X_train, y_train)
-        val_preds = clf.predict(X_val)
-        val_f1 = float(f1_score(y_val, val_preds, average="macro"))
+    solvers = solver_candidates or [solver]
 
-        record = {"C": float(C), "val_macro_f1": val_f1}
-        history.append(record)
+    for s in solvers:
+        for C in C_candidates:
+            clf = LogisticRegression(
+                C=C,
+                solver=s,
+                max_iter=max_iter,
+                class_weight=class_weight,
+                random_state=random_state,
+            )
+            clf.fit(X_train, y_train)
+            val_preds = clf.predict(X_val)
+            val_f1 = float(f1_score(y_val, val_preds, average="macro"))
 
-        if val_f1 > best_f1:
-            best_f1 = val_f1
-            best_model = clf
+            record = {"solver": s, "C": float(C), "val_macro_f1": val_f1}
+            history.append(record)
+
+            if val_f1 > best_f1:
+                best_f1 = val_f1
+                best_model = clf
+                best_C = float(C)
+                best_solver = s
 
     assert best_model is not None
-    return best_model, history
+    setattr(best_model, "best_C_", best_C)
+    setattr(best_model, "best_solver_", best_solver)
+    return best_model, best_C, best_solver, history
 
 
 def tune_linear_svm(

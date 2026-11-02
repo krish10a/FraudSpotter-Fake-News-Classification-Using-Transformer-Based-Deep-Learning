@@ -37,22 +37,27 @@ classical:
   # Memory efficiency & precision
   dtype: "float32"
 
+  # Configurable text length handling to prevent memory spikes on extreme long texts
+  text_length:
+    max_chars: 8000
+    enabled: true
+
   # Word TF-IDF representation (MultinomialNB & Logistic Regression)
   word_tfidf:
     ngram_range: [1, 2]
     min_df: 2
     max_df: 0.95
     sublinear_tf: true
-    max_features: 150000
+    max_features: 100000
 
   # Character TF-IDF representation (Logistic Regression)
   char_tfidf:
     analyzer: "char_wb"
     ngram_range: [3, 5]
-    min_df: 2
+    min_df: 3
     max_df: 0.95
     sublinear_tf: true
-    max_features: 150000
+    max_features: 50000
 
   # Majority Sanity Baseline
   majority:
@@ -69,6 +74,7 @@ classical:
   logistic_regression:
     penalty: "l2"
     solver: "lbfgs"
+    solver_candidates: ["lbfgs", "liblinear"]
     max_iter: 2000
     class_weight: "balanced"
     C_candidates: [1.0, 2.0, 4.0]

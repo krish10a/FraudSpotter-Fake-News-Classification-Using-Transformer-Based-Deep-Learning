@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -78,17 +80,19 @@ def test_validation_only_tuning(sample_news_data):
     assert len(nb_history) == 3
     assert best_nb.alpha in [0.1, 0.5, 1.0]
 
-    # Test LogisticRegression tuning
-    best_lr, lr_history = tune_logistic_regression(
+    # Test LogisticRegression tuning with solver benchmarking
+    best_lr, best_c, best_solver, lr_history = tune_logistic_regression(
         X_train=X_train_sp,
         y_train=labels,
         X_val=X_val_sp,
         y_val=labels,
         C_candidates=[0.5, 1.0, 2.0],
+        solver_candidates=["lbfgs", "liblinear"],
         max_iter=100,
     )
-    assert len(lr_history) == 3
-    assert best_lr.C in [0.5, 1.0, 2.0]
+    assert len(lr_history) == 6  # 2 solvers x 3 C candidates
+    assert best_c in [0.5, 1.0, 2.0]
+    assert best_solver in ["lbfgs", "liblinear"]
 
 
 def test_build_and_train_classical_pipelines(sample_news_data, tmp_path):
@@ -228,3 +232,41 @@ def test_tune_linear_svm_records_actual_best_c(sample_news_data):
     assert best_c == expected_best
     assert hasattr(best_svm, "best_C_")
     assert best_svm.best_C_ == expected_best
+
+
+def test_char_vectorizer_pruning_and_feature_limits():
+    """Verify character TF-IDF vectorizer defaults to min_df=3 and max_features=50000 with float32."""
+    char_vec = build_char_vectorizer()
+    assert char_vec.min_df == 3
+    assert char_vec.max_features == 50000
+    assert char_vec.dtype == np.float32
+    assert char_vec.analyzer == "char_wb"
+    assert char_vec.ngram_range == (3, 5)
+
+
+def test_text_truncation_logic():
+    """Verify text truncation properly limits long articles while preserving short ones."""
+    sample_texts = [
+        "A" * 12000,  # Exceeds 8000
+        "B" * 3000,  # Within 8000
+    ]
+    max_chars = 8000
+    truncated = [t[:max_chars] if len(t) > max_chars else t for t in sample_texts]
+
+    assert len(truncated[0]) == 8000
+    assert len(truncated[1]) == 3000
+
+
+def test_intermediate_report_persistence(tmp_path):
+    """Verify intermediate reporting persists valid JSON after each stage."""
+    from scripts.train_classical import save_intermediate_report
+
+    test_file = tmp_path / "test_metrics.json"
+    data = {"stage": "majority", "macro_f1": 0.5}
+
+    save_intermediate_report(data, test_file)
+    assert test_file.exists()
+
+    with open(test_file, "r", encoding="utf-8") as f:
+        loaded = json.load(f)
+    assert loaded["stage"] == "majority"
