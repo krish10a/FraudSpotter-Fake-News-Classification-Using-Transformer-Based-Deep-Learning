@@ -189,10 +189,15 @@ def tune_linear_svm(
     max_iter: int = 2000,
     class_weight: str = "balanced",
     random_state: int = 42,
-) -> Tuple[Any, List[Dict[str, Any]]]:
-    """Tune LinearSVC with calibrated probabilities using validation Macro-F1 only."""
+) -> Tuple[Any, float, List[Dict[str, Any]]]:
+    """Tune LinearSVC with calibrated probabilities using validation Macro-F1 only.
+
+    Returns:
+        Tuple of (best_calibrated_model, best_C, tuning_history)
+    """
     best_model: Optional[Any] = None
     best_f1: float = -1.0
+    best_C: float = float(C_candidates[0])
     history: List[Dict[str, Any]] = []
 
     for C in C_candidates:
@@ -214,9 +219,11 @@ def tune_linear_svm(
         if val_f1 > best_f1:
             best_f1 = val_f1
             best_model = calibrated_clf
+            best_C = float(C)
 
     assert best_model is not None
-    return best_model, history
+    setattr(best_model, "best_C_", best_C)
+    return best_model, best_C, history
 
 
 def build_classical_pipeline(
@@ -230,7 +237,7 @@ def build_classical_pipeline(
     if m_type in ["majority", "majority_baseline"]:
         return Pipeline(
             [
-                ("features", TfidfVectorizer(max_features=10, dtype=np.float32)),
+                ("features", build_word_vectorizer(max_features=10)),
                 ("clf", MajorityClassifier()),
             ]
         )

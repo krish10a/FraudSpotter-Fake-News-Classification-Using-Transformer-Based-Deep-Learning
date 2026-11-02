@@ -14,7 +14,8 @@ labels:
 transformer:
   model_name: "distilbert/distilbert-base-uncased"
   num_labels: 2
-  max_seq_length: 512
+  max_seq_length: 256
+  sequence_length_experiments: [128, 256, 384]
   batch_size: 16
   eval_batch_size: 32
   learning_rate: 2.0e-5

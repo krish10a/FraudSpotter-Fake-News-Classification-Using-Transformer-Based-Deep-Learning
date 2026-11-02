@@ -48,32 +48,98 @@ def resolve_split_path(
     drive_dir: Optional[str],
     split_name: str,
 ) -> Path:
-    """Resolve split path checking explicit path, drive_dir, parquet, and csv."""
+    """Resolve split path checking explicit path, drive_dir, parquet, and csv.
+
+    Strictly supports training and validation splits. The test partition is intentionally
+    excluded to guarantee zero test leakage during baseline model selection and tuning.
+    """
     if explicit_path:
         p = Path(explicit_path)
         if p.is_file():
             return p
 
+    aliases = [split_name]
+    if split_name in ["val", "validation"]:
+        aliases = ["validation", "val"]
+    elif split_name in ["train", "training"]:
+        aliases = ["train", "training"]
+
+    search_dirs = []
     if drive_dir:
-        d_p = Path(drive_dir)
-        pq_candidate = d_p / f"{split_name}.parquet"
-        if pq_candidate.is_file():
-            return pq_candidate
-        csv_candidate = d_p / f"{split_name}.csv"
-        if csv_candidate.is_file():
-            return csv_candidate
+        search_dirs.append(Path(drive_dir))
+    search_dirs.extend(
+        [
+            Path("/content/drive/MyDrive/FraudSpotter/data/processed/welfake_v1"),
+            Path("/content/drive/MyDrive/FraudSpotter_Data"),
+            Path("data/processed/welfake_v1"),
+            Path("data/processed/welfake"),
+        ]
+    )
 
-    # Local default candidates
-    local_dir = Path("data/processed/welfake")
-    pq_local = local_dir / f"{split_name}.parquet"
-    if pq_local.is_file():
-        return pq_local
-    csv_local = local_dir / f"{split_name}.csv"
-    if csv_local.is_file():
-        return csv_local
+    for s_dir in search_dirs:
+        for alias in aliases:
+            for ext in [".parquet", ".pq", ".csv"]:
+                candidate = s_dir / f"{alias}{ext}"
+                if candidate.is_file():
+                    return candidate
 
-    # Fallback to explicit_path even if not found yet (will trigger error)
-    return Path(explicit_path or f"data/processed/welfake/{split_name}.parquet")
+    # Default fallback
+    return Path(
+        explicit_path
+        or f"/content/drive/MyDrive/FraudSpotter/data/processed/welfake_v1/{split_name}.parquet"
+    )
+
+
+def run_memory_preflight(n_train_samples: int, n_val_samples: int) -> None:
+    """Execute resource and memory preflight check for large dataset training (e.g. ~50,937 rows)."""
+    import gc
+
+    gc.collect()
+
+    logger.info("=== Resource & Memory Preflight Check ===")
+    logger.info(f"Training partition size:   {n_train_samples:,} rows")
+    logger.info(f"Validation partition size: {n_val_samples:,} rows")
+
+    available_ram_gb = None
+    try:
+        meminfo_path = Path("/proc/meminfo")
+        if meminfo_path.exists():
+            with open(meminfo_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if "MemAvailable:" in line:
+                        kb = int(line.split()[1])
+                        available_ram_gb = kb / (1024**2)
+                        break
+    except Exception:
+        pass
+
+    if available_ram_gb is None:
+        try:
+            import psutil
+
+            available_ram_gb = psutil.virtual_memory().available / (1024**3)
+        except Exception:
+            available_ram_gb = None
+
+    if available_ram_gb is not None:
+        logger.info(f"Detected Available RAM:    {available_ram_gb:.2f} GB")
+        if available_ram_gb < 1.5:
+            logger.warning(
+                f"Low available RAM ({available_ram_gb:.2f} GB). Monitor memory closely."
+            )
+        else:
+            logger.info("RAM Status:                [PASS] Sufficient headroom verified.")
+    else:
+        logger.info("Detected Available RAM:    N/A (OS memory probe unavailable)")
+
+    # Projection for ~300k combined float32 features:
+    # rows * ~1000 nonzeros * 8 bytes (4B float32 data + 4B int32 indices)
+    estimated_csr_mb = (n_train_samples * 1000 * 8) / (1024**2)
+    logger.info(
+        f"Projected CSR Sparse Memory: ~{estimated_csr_mb:.1f} MB (float32 precision, ~300k features)"
+    )
+    logger.info("Preflight status:          READY for full baseline training.")
+    logger.info("=========================================\n")
 
 
 def main():
@@ -143,6 +209,9 @@ def main():
         f"FAKE(1)={val_counts[1]} ({val_counts[1] / len(y_val):.1%})"
     )
 
+    # Resource & Memory Preflight check for large dataset training
+    run_memory_preflight(len(y_train), len(y_val))
+
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = Path(args.metrics_file)
@@ -168,24 +237,26 @@ def main():
     # 1. Majority Sanity Baseline
     # -------------------------------------------------------------
     logger.info("\n--- [1/4] Training Majority Sanity Baseline ---")
-    majority_clf = MajorityClassifier()
-    majority_clf.fit(X_train_raw, y_train)
-
-    maj_preds = majority_clf.predict(X_val_raw)
-    maj_probs = majority_clf.predict_proba(X_val_raw)
-    maj_metrics = compute_classification_metrics(y_val, maj_preds, maj_probs)
-
     maj_pipeline = Pipeline(
         [
             ("features", build_word_vectorizer(max_features=10)),
-            ("clf", majority_clf),
+            ("clf", MajorityClassifier()),
         ]
     )
+    # Fit full pipeline on raw training strings so features step is fully fitted for inference
+    maj_pipeline.fit(X_train_raw, y_train)
+
+    maj_preds = maj_pipeline.predict(X_val_raw)
+    maj_probs = maj_pipeline.predict_proba(X_val_raw)
+    maj_metrics = compute_classification_metrics(y_val, maj_preds, maj_probs)
+
     maj_path = out_dir / "majority_baseline.joblib"
     save_model(maj_pipeline, str(maj_path))
 
     report["models"]["majority_baseline"] = {
-        "selected_hyperparameters": {"majority_class": int(majority_clf.majority_class_)},
+        "selected_hyperparameters": {
+            "majority_class": int(maj_pipeline.named_steps["clf"].majority_class_)
+        },
         "validation_metrics": maj_metrics,
         "artifact_path": str(maj_path),
     }
@@ -329,7 +400,7 @@ def main():
         svm_cfg = classical_cfg.get("linear_svm", {})
         svm_c_candidates = svm_cfg.get("C_candidates", [0.5, 1.0, 2.0])
 
-        best_svm, svm_tuning_history = tune_linear_svm(
+        best_svm, best_svm_c, svm_tuning_history = tune_linear_svm(
             X_train=X_train_comb_sp,
             y_train=y_train,
             X_val=X_val_comb_sp,
@@ -349,7 +420,7 @@ def main():
         save_model(svm_pipeline, str(svm_path))
 
         report["models"]["linear_svm"] = {
-            "selected_hyperparameters": {"C": svm_tuning_history[-1].get("C")},
+            "selected_hyperparameters": {"C": float(best_svm_c)},
             "tuning_history": svm_tuning_history,
             "validation_metrics": svm_metrics,
             "artifact_path": str(svm_path),

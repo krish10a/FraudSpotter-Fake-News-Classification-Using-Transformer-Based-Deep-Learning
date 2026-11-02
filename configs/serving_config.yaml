@@ -12,7 +12,7 @@ optimization:
     quantization_type: "INT8"
     optimization_level: "ORT_ENABLE_ALL"
     execution_provider: "CPUExecutionProvider"
-    max_seq_length: 512
+    max_seq_length: 256
 
 fallback_model:
   type: "classical"
