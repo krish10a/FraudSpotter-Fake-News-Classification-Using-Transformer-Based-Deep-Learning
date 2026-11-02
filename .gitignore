@@ -1,0 +1,67 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & Virtual Envs
+.venv/
+venv/
+ENV/
+env/
+.uv/
+
+# Datasets & Large Data (Never commit raw or processed datasets to Git)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/external/*
+!data/external/.gitkeep
+*.csv
+*.tsv
+*.parquet
+*.jsonl
+*.zip
+*.tar.gz
+
+# Model Weights, Large Checkpoints, ONNX & Cache
+artifacts/models/*
+!artifacts/models/.gitkeep
+artifacts/metrics/*
+!artifacts/metrics/.gitkeep
+artifacts/figures/*
+!artifacts/figures/.gitkeep
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+*.joblib
+*.pkl
+
+# Logs & Optuna databases
+*.log
+logs/
+*.sqlite3
+wandb/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE & Editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Secrets & Environment variables
+.env
+.env.local
+

@@ -1,0 +1,31 @@
+# Explainability Configuration for FraudSpotter
+seed: 42
+
+captum:
+  method: "integrated_gradients"
+  n_steps: 50
+  internal_batch_size: 16
+  baseline_token: "[PAD]"
+  target_class: 1
+  visualize: true
+  top_k_tokens: 15
+
+lime:
+  num_features: 15
+  num_samples: 500
+  split_expression: "\\W+"
+  bow: true
+
+global_interpretation:
+  logistic_regression:
+    top_positive_features: 25
+    top_negative_features: 25
+    save_plot_path: "artifacts/figures/lr_top_features.png"
+    save_json_path: "artifacts/metrics/lr_global_features.json"
+
+faithfulness:
+  metrics:
+    - "comprehensiveness"
+    - "sufficiency"
+  top_k_ratios: [0.1, 0.2, 0.3]
+

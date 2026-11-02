@@ -1,0 +1,40 @@
+# Evaluation Configuration for FraudSpotter
+seed: 42
+
+metrics:
+  classification:
+    - "macro_f1"
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "roc_auc"
+    - "pr_auc"
+    - "matthews_corrcoef"
+  calibration:
+    - "expected_calibration_error"
+    - "brier_score"
+    n_bins: 10
+
+statistical_testing:
+  bootstrap:
+    n_resamples: 1000
+    confidence_level: 0.95
+    random_state: 42
+  mcnemar:
+    exact: false
+    correction: true
+
+robustness:
+  perturbations:
+    - type: "character_typos"
+      rate: 0.05
+    - type: "word_deletion"
+      rate: 0.05
+    - type: "uppercase_switch"
+      rate: 0.10
+
+output:
+  metrics_dir: "artifacts/metrics"
+  figures_dir: "artifacts/figures"
+  reports_file: "artifacts/metrics/evaluation_report.json"
+

@@ -1,0 +1,56 @@
+# Data Configuration for FraudSpotter
+seed: 42
+
+datasets:
+  welfake:
+    name: "WELFake"
+    source_url: "https://zenodo.org/record/4561253/files/WELFake_Dataset.csv"
+    kaggle_id: "saurabhshahane/fake-news-classification"
+    raw_path: "data/raw/welfake.csv"
+    processed_dir: "data/processed/welfake"
+    text_column: "text"
+    title_column: "title"
+    label_column: "label"
+    # In WELFake: 0 = Fake news, 1 = Real news
+    label_mapping:
+      0: "FAKE"
+      1: "REAL"
+    split_ratios:
+      train: 0.80
+      val: 0.10
+      test: 0.10
+
+  isot:
+    name: "ISOT"
+    kaggle_id: "clmentbisaillon/fake-and-real-news-dataset"
+    raw_dir: "data/raw/isot"
+    processed_dir: "data/processed/isot"
+    true_file: "True.csv"
+    fake_file: "Fake.csv"
+    text_column: "text"
+    title_column: "title"
+    label_column: "label"
+
+  liar:
+    name: "LIAR"
+    source_url: "https://www.cs.ucsb.edu/~william/data/liar_dataset.zip"
+    raw_dir: "data/raw/liar"
+    processed_dir: "data/processed/liar"
+    # Multi-class to binary mapping for fake news detection
+    binary_mapping:
+      pants-fire: "FAKE"
+      false: "FAKE"
+      barely-true: "FAKE"
+      half-true: "UNCERTAIN"
+      mostly-true: "REAL"
+      true: "REAL"
+
+preprocessing:
+  max_seq_length: 512
+  lowercase: true
+  strip_html: true
+  normalize_urls: true
+  handle_nulls: "fill_empty"
+  combine_title_text: true
+  separator: " "
+

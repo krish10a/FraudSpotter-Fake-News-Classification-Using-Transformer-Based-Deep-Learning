@@ -1,0 +1,1 @@
+"""FraudSpotter test suite."""

@@ -1,0 +1,33 @@
+# FRAUDSPOTTER - Local Laptop Requirements
+# Designed for lightweight CPU execution, testing, API serving, and classical ML
+
+# Core Data Science & Classical ML
+numpy>=1.26.0,<2.0.0
+pandas>=2.1.0,<3.0.0
+scikit-learn>=1.4.0,<1.6.0
+scipy>=1.12.0,<1.14.0
+joblib>=1.3.0
+
+# Text Processing & Utilities
+nltk>=3.8.1
+pyyaml>=6.0.1
+pydantic>=2.6.0,<3.0.0
+python-dotenv>=1.0.1
+tqdm>=4.66.0
+rich>=13.7.0
+
+# API & Web Serving
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+streamlit>=1.32.0
+requests>=2.31.0
+
+# ONNX Runtime (CPU) for local lightweight inference
+onnxruntime>=1.17.0
+
+# Testing & Code Quality
+pytest>=8.0.0
+pytest-cov>=4.1.0
+httpx>=0.27.0
+ruff>=0.3.0
+

@@ -1,0 +1,62 @@
+# Training Configuration for FraudSpotter
+seed: 42
+device: "cuda"  # fallback to 'cpu' when cuda is unavailable
+
+transformer:
+  model_name: "distilbert-base-uncased"
+  num_labels: 2
+  max_seq_length: 512
+  batch_size: 16
+  eval_batch_size: 32
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  num_train_epochs: 3
+  warmup_ratio: 0.1
+  lr_scheduler_type: "linear"
+  fp16: true
+  gradient_accumulation_steps: 1
+  logging_steps: 100
+  eval_steps: 500
+  save_strategy: "epoch"
+  evaluation_strategy: "epoch"
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_f1_macro"
+  output_dir: "artifacts/models/distilbert"
+
+classical:
+  tfidf:
+    max_features: 10000
+    ngram_range: [1, 2]
+    min_df: 3
+    max_df: 0.95
+    sublinear_tf: true
+  
+  logistic_regression:
+    C: 1.0
+    penalty: "l2"
+    solver: "lbfgs"
+    max_iter: 1000
+    class_weight: "balanced"
+    output_path: "artifacts/models/classical/logreg.joblib"
+
+  multinomial_nb:
+    alpha: 0.1
+    fit_prior: true
+    output_path: "artifacts/models/classical/naive_bayes.joblib"
+
+  linear_svm:
+    C: 1.0
+    loss: "squared_hinge"
+    max_iter: 2000
+    class_weight: "balanced"
+    output_path: "artifacts/models/classical/linear_svm.joblib"
+
+optuna:
+  n_trials: 20
+  timeout_seconds: 7200
+  search_space:
+    learning_rate: [1.0e-5, 5.0e-5]
+    batch_size: [16, 32]
+    weight_decay: [0.001, 0.1]
+    warmup_ratio: [0.05, 0.2]
+
